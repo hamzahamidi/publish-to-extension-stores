@@ -1,0 +1,5 @@
+node_modules/
+/stores/
+/self-test*
+.DS_Store
+/lcov.info
