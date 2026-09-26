@@ -1,0 +1,462 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Clone each store action at the commit action.yml pins
+        run: node scripts/fetch-stores.ts
+      - run: npm run typecheck
+      - run: npm test
+      - name: Upload coverage to Codecov
+        # Fork pull requests receive no id-token, so an OIDC upload from them can only fail.
+        if: matrix.os == 'ubuntu-latest' && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          use_oidc: true
+          files: ./lcov.info
+          fail_ci_if_error: true
+
+  pins:
+    name: Version comments name the pinned commits
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - run: node scripts/check-pins.ts
+
+  mocks:
+    name: Umbrella against the store mocks (${{ matrix.scenario }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: all
+            edge: submitted
+            notes: "Test account: reviewer@example.com\nClick the toolbar button & check that 100% = done."
+          - scenario: chrome-fails
+            edge: submitted
+            chrome-zip: stores/chrome/missing.zip
+            notes: "Test account: reviewer@example.com\nClick the toolbar button & check that 100% = done."
+          - scenario: edge-in-review
+            edge: in-review
+          - scenario: dry-run
+            edge: dry-run
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Clone each store action at the commit action.yml pins
+        run: node scripts/fetch-stores.ts
+      - name: Start the Chrome mock
+        working-directory: stores/chrome
+        run: node test/self-test.ts start
+      - name: Start the Firefox mock
+        working-directory: stores/firefox
+        run: node test/self-test.ts start listed
+      - name: Start the Edge mock
+        working-directory: stores/edge
+        env:
+          EDGE_SCENARIO: ${{ matrix.edge }}
+        run: node test/self-test.ts start "$EDGE_SCENARIO"
+      - id: stores
+        continue-on-error: true
+        uses: ./
+        with:
+          dry-run: ${{ matrix.scenario == 'dry-run' }}
+          chrome-access-token: self-test-token
+          chrome-publisher-id: pub-1
+          chrome-item-id: abcdefghijklmnopabcdefghijklmnop
+          chrome-zip: ${{ matrix.chrome-zip || 'stores/chrome/self-test.zip' }}
+          firefox-api-key: user:12345:67
+          firefox-api-secret: self-test-secret
+          firefox-addon-id: my-extension@example.com
+          firefox-zip: stores/firefox/self-test.zip
+          firefox-channel: listed
+          firefox-source: stores/firefox/self-test-source.zip
+          firefox-release-notes: Adds a settings page.
+          firefox-approval-notes: npm ci && npm run build
+          edge-api-key: self-test-key
+          edge-client-id: self-test-client
+          edge-product-id: 0f5c3b2a-7e1d-4a6b-9c8d-2e3f4a5b6c7d
+          edge-zip: stores/edge/self-test.zip
+          edge-certification-notes: ${{ matrix.notes }}
+      - name: Check the umbrella's outcome and outputs
+        if: ${{ !cancelled() }}
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+          UMBRELLA_OUTCOME: ${{ steps.stores.outcome }}
+          CHROME_OUTCOME: ${{ steps.stores.outputs.chrome-outcome }}
+          CHROME_RESULT: ${{ steps.stores.outputs.chrome-result }}
+          FIREFOX_OUTCOME: ${{ steps.stores.outputs.firefox-outcome }}
+          FIREFOX_RESULT: ${{ steps.stores.outputs.firefox-result }}
+          EDGE_OUTCOME: ${{ steps.stores.outputs.edge-outcome }}
+          EDGE_RESULT: ${{ steps.stores.outputs.edge-result }}
+          EDGE_ERROR_CODE: ${{ steps.stores.outputs.edge-error-code }}
+        run: node test/umbrella.ts "$SCENARIO"
+      - name: Chrome's own verifier
+        if: ${{ !cancelled() && (matrix.scenario == 'all' || matrix.scenario == 'edge-in-review') }}
+        working-directory: stores/chrome
+        env:
+          RESULT: ${{ steps.stores.outputs.chrome-result }}
+          STATE: ${{ steps.stores.outputs.chrome-state }}
+          VERSION: ${{ steps.stores.outputs.chrome-version }}
+        run: node test/self-test.ts verify
+      - name: Firefox's own verifier
+        if: ${{ !cancelled() && matrix.scenario != 'dry-run' }}
+        working-directory: stores/firefox
+        env:
+          RESULT: ${{ steps.stores.outputs.firefox-result }}
+          STATE: ${{ steps.stores.outputs.firefox-state }}
+          VERSION: ${{ steps.stores.outputs.firefox-version }}
+          VERSION_ID: ${{ steps.stores.outputs.firefox-version-id }}
+          EDIT_URL: ${{ steps.stores.outputs.firefox-edit-url }}
+        run: node test/self-test.ts verify listed
+      - name: Edge's own verifier
+        if: ${{ !cancelled() }}
+        working-directory: stores/edge
+        env:
+          EDGE_SCENARIO: ${{ matrix.edge }}
+          OUTCOME: ${{ steps.stores.outputs.edge-outcome }}
+          RESULT: ${{ steps.stores.outputs.edge-result }}
+          VERSION: ${{ steps.stores.outputs.edge-version }}
+          ERROR_CODE: ${{ steps.stores.outputs.edge-error-code }}
+          NOTES: ${{ matrix.notes }}
+        run: node test/self-test.ts verify "$EDGE_SCENARIO"
+
+  refresh-token:
+    name: Umbrella with the Chrome refresh token against the mocks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Clone each store action at the commit action.yml pins
+        run: node scripts/fetch-stores.ts
+      - name: Start the Chrome mock
+        working-directory: stores/chrome
+        run: node test/self-test.ts start
+      - name: Start the Firefox mock
+        working-directory: stores/firefox
+        run: node test/self-test.ts start listed
+      - name: Start the Edge mock
+        working-directory: stores/edge
+        run: node test/self-test.ts start submitted
+      - name: Start the token mock
+        run: node test/token-mock.ts start
+      - id: stores
+        continue-on-error: true
+        uses: ./
+        with:
+          chrome-client-id: self-test-client-id
+          chrome-client-secret: self-test-client-secret
+          chrome-refresh-token: self-test-refresh-token
+          chrome-publisher-id: pub-1
+          chrome-item-id: abcdefghijklmnopabcdefghijklmnop
+          chrome-zip: stores/chrome/self-test.zip
+      - name: Check the umbrella's outcome and outputs
+        if: ${{ !cancelled() }}
+        env:
+          UMBRELLA_OUTCOME: ${{ steps.stores.outcome }}
+          CHROME_OUTCOME: ${{ steps.stores.outputs.chrome-outcome }}
+          CHROME_RESULT: ${{ steps.stores.outputs.chrome-result }}
+          FIREFOX_OUTCOME: ${{ steps.stores.outputs.firefox-outcome }}
+          FIREFOX_RESULT: ${{ steps.stores.outputs.firefox-result }}
+          EDGE_OUTCOME: ${{ steps.stores.outputs.edge-outcome }}
+          EDGE_RESULT: ${{ steps.stores.outputs.edge-result }}
+          EDGE_ERROR_CODE: ${{ steps.stores.outputs.edge-error-code }}
+        run: node test/umbrella.ts refresh-token
+      - name: Chrome's own verifier
+        if: ${{ !cancelled() }}
+        working-directory: stores/chrome
+        env:
+          RESULT: ${{ steps.stores.outputs.chrome-result }}
+          STATE: ${{ steps.stores.outputs.chrome-state }}
+          VERSION: ${{ steps.stores.outputs.chrome-version }}
+        run: node test/self-test.ts verify
+
+  chrome-crx:
+    name: Umbrella with a signed CRX against the mocks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Clone each store action at the commit action.yml pins
+        run: node scripts/fetch-stores.ts
+      - name: Start the Chrome mock and make a throwaway signing key
+        working-directory: stores/chrome
+        run: node test/self-test.ts start-crx
+      - name: Start the Firefox mock
+        working-directory: stores/firefox
+        run: node test/self-test.ts start listed
+      - name: Start the Edge mock
+        working-directory: stores/edge
+        run: node test/self-test.ts start submitted
+      - id: sign
+        uses: ./stores/chrome/sign
+        with:
+          zip: stores/chrome/self-test.zip
+          private-key: ${{ env.SELF_TEST_KEY }}
+      - id: stores
+        continue-on-error: true
+        uses: ./
+        with:
+          chrome-access-token: self-test-token
+          chrome-publisher-id: pub-1
+          chrome-item-id: abcdefghijklmnopabcdefghijklmnop
+          chrome-crx: ${{ steps.sign.outputs.crx }}
+      - name: Check the umbrella's outcome and outputs
+        if: ${{ !cancelled() }}
+        env:
+          UMBRELLA_OUTCOME: ${{ steps.stores.outcome }}
+          CHROME_OUTCOME: ${{ steps.stores.outputs.chrome-outcome }}
+          CHROME_RESULT: ${{ steps.stores.outputs.chrome-result }}
+          FIREFOX_OUTCOME: ${{ steps.stores.outputs.firefox-outcome }}
+          FIREFOX_RESULT: ${{ steps.stores.outputs.firefox-result }}
+          EDGE_OUTCOME: ${{ steps.stores.outputs.edge-outcome }}
+          EDGE_RESULT: ${{ steps.stores.outputs.edge-result }}
+          EDGE_ERROR_CODE: ${{ steps.stores.outputs.edge-error-code }}
+        run: node test/umbrella.ts chrome-crx
+      - name: Chrome's own verifier
+        if: ${{ !cancelled() }}
+        working-directory: stores/chrome
+        env:
+          RESULT: ${{ steps.stores.outputs.chrome-result }}
+          STATE: ${{ steps.stores.outputs.chrome-state }}
+          VERSION: ${{ steps.stores.outputs.chrome-version }}
+        run: node test/self-test.ts verify-crx
+
+  refusals:
+    name: Umbrella refuses before any store runs (${{ matrix.case }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - case: no inputs
+          - case: half the Workload Identity pair
+            chrome-workload-identity-provider: projects/123456789/locations/global/workloadIdentityPools/cws-publish/providers/github
+            chrome-publisher-id: pub-1
+            chrome-item-id: abcdefghijklmnopabcdefghijklmnop
+            chrome-zip: stores/chrome/self-test.zip
+          - case: Workload Identity with an access token
+            chrome-workload-identity-provider: projects/123456789/locations/global/workloadIdentityPools/cws-publish/providers/github
+            chrome-service-account: cws-publisher@example-project.iam.gserviceaccount.com
+            chrome-access-token: self-test-token
+            chrome-publisher-id: pub-1
+            chrome-item-id: abcdefghijklmnopabcdefghijklmnop
+            chrome-zip: stores/chrome/self-test.zip
+          - case: Workload Identity in a job without id-token write
+            chrome-workload-identity-provider: projects/123456789/locations/global/workloadIdentityPools/cws-publish/providers/github
+            chrome-service-account: cws-publisher@example-project.iam.gserviceaccount.com
+            chrome-publisher-id: pub-1
+            chrome-item-id: abcdefghijklmnopabcdefghijklmnop
+            chrome-zip: stores/chrome/self-test.zip
+          - case: part of the refresh token trio
+            chrome-client-id: self-test-client-id
+            chrome-refresh-token: self-test-refresh-token
+            chrome-publisher-id: pub-1
+            chrome-item-id: abcdefghijklmnopabcdefghijklmnop
+            chrome-zip: stores/chrome/self-test.zip
+          - case: an access token with the refresh token trio
+            chrome-access-token: self-test-token
+            chrome-client-id: self-test-client-id
+            chrome-client-secret: self-test-client-secret
+            chrome-refresh-token: self-test-refresh-token
+            chrome-publisher-id: pub-1
+            chrome-item-id: abcdefghijklmnopabcdefghijklmnop
+            chrome-zip: stores/chrome/self-test.zip
+          - case: firefox-addon-id without Firefox credentials
+            firefox-addon-id: my-extension@example.com
+            edge-api-key: self-test-key
+            edge-client-id: self-test-client
+            edge-product-id: 0f5c3b2a-7e1d-4a6b-9c8d-2e3f4a5b6c7d
+            edge-zip: stores/edge/self-test.zip
+          - case: Firefox credentials without firefox-channel
+            firefox-api-key: user:12345:67
+            firefox-api-secret: self-test-secret
+            firefox-addon-id: my-extension@example.com
+            firefox-zip: stores/firefox/self-test.zip
+          - case: both chrome-zip and chrome-crx
+            chrome-access-token: self-test-token
+            chrome-publisher-id: pub-1
+            chrome-item-id: abcdefghijklmnopabcdefghijklmnop
+            chrome-zip: stores/chrome/self-test.zip
+            chrome-crx: stores/chrome/self-test.zip
+          - case: dry-run yes
+            dry-run: 'yes'
+            edge-api-key: self-test-key
+            edge-client-id: self-test-client
+            edge-product-id: 0f5c3b2a-7e1d-4a6b-9c8d-2e3f4a5b6c7d
+            edge-zip: stores/edge/self-test.zip
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Clone each store action at the commit action.yml pins
+        run: node scripts/fetch-stores.ts
+      - name: Start the Chrome mock
+        working-directory: stores/chrome
+        run: node test/self-test.ts start
+      - name: Start the Firefox mock
+        working-directory: stores/firefox
+        run: node test/self-test.ts start listed
+      - name: Start the Edge mock
+        working-directory: stores/edge
+        run: node test/self-test.ts start submitted
+      - id: stores
+        continue-on-error: true
+        uses: ./
+        with:
+          dry-run: ${{ matrix.dry-run }}
+          chrome-workload-identity-provider: ${{ matrix.chrome-workload-identity-provider }}
+          chrome-service-account: ${{ matrix.chrome-service-account }}
+          chrome-access-token: ${{ matrix.chrome-access-token }}
+          chrome-client-id: ${{ matrix.chrome-client-id }}
+          chrome-client-secret: ${{ matrix.chrome-client-secret }}
+          chrome-refresh-token: ${{ matrix.chrome-refresh-token }}
+          chrome-publisher-id: ${{ matrix.chrome-publisher-id }}
+          chrome-item-id: ${{ matrix.chrome-item-id }}
+          chrome-zip: ${{ matrix.chrome-zip }}
+          chrome-crx: ${{ matrix.chrome-crx }}
+          chrome-publish: ${{ matrix.chrome-publish }}
+          chrome-deploy-percentage: ${{ matrix.chrome-deploy-percentage }}
+          chrome-skip-review: ${{ matrix.chrome-skip-review }}
+          chrome-block-on-warnings: ${{ matrix.chrome-block-on-warnings }}
+          chrome-publish-type: ${{ matrix.chrome-publish-type }}
+          firefox-api-key: ${{ matrix.firefox-api-key }}
+          firefox-api-secret: ${{ matrix.firefox-api-secret }}
+          firefox-addon-id: ${{ matrix.firefox-addon-id }}
+          firefox-zip: ${{ matrix.firefox-zip }}
+          firefox-channel: ${{ matrix.firefox-channel }}
+          firefox-source: ${{ matrix.firefox-source }}
+          firefox-release-notes: ${{ matrix.firefox-release-notes }}
+          firefox-approval-notes: ${{ matrix.firefox-approval-notes }}
+          edge-api-key: ${{ matrix.edge-api-key }}
+          edge-client-id: ${{ matrix.edge-client-id }}
+          edge-product-id: ${{ matrix.edge-product-id }}
+          edge-zip: ${{ matrix.edge-zip }}
+          edge-publish: ${{ matrix.edge-publish }}
+          edge-certification-notes: ${{ matrix.edge-certification-notes }}
+      - name: Check that the umbrella failed before any store ran
+        if: ${{ !cancelled() }}
+        env:
+          UMBRELLA_OUTCOME: ${{ steps.stores.outcome }}
+          CHROME_OUTCOME: ${{ steps.stores.outputs.chrome-outcome }}
+          CHROME_RESULT: ${{ steps.stores.outputs.chrome-result }}
+          FIREFOX_OUTCOME: ${{ steps.stores.outputs.firefox-outcome }}
+          FIREFOX_RESULT: ${{ steps.stores.outputs.firefox-result }}
+          EDGE_OUTCOME: ${{ steps.stores.outputs.edge-outcome }}
+          EDGE_RESULT: ${{ steps.stores.outputs.edge-result }}
+          EDGE_ERROR_CODE: ${{ steps.stores.outputs.edge-error-code }}
+        run: node test/umbrella.ts refusal
+
+  systems:
+    name: Umbrella on ${{ matrix.os }} with Node ${{ matrix.node }} on PATH
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [24]
+        include:
+          - os: ubuntu-latest
+            node: 18
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+      - id: edge
+        name: Edge dry run, which sends nothing to Microsoft
+        continue-on-error: true
+        uses: ./
+        with:
+          dry-run: true
+          edge-api-key: self-test-key
+          edge-client-id: self-test-client
+          edge-product-id: 0f5c3b2a-7e1d-4a6b-9c8d-2e3f4a5b6c7d
+          edge-zip: test/fixtures/extension.zip
+      - id: none
+        name: No credentials
+        continue-on-error: true
+        uses: ./
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Check the Edge dry run
+        if: ${{ !cancelled() }}
+        env:
+          UMBRELLA_OUTCOME: ${{ steps.edge.outcome }}
+          CHROME_OUTCOME: ${{ steps.edge.outputs.chrome-outcome }}
+          CHROME_RESULT: ${{ steps.edge.outputs.chrome-result }}
+          FIREFOX_OUTCOME: ${{ steps.edge.outputs.firefox-outcome }}
+          FIREFOX_RESULT: ${{ steps.edge.outputs.firefox-result }}
+          EDGE_OUTCOME: ${{ steps.edge.outputs.edge-outcome }}
+          EDGE_RESULT: ${{ steps.edge.outputs.edge-result }}
+          EDGE_ERROR_CODE: ${{ steps.edge.outputs.edge-error-code }}
+        run: node test/umbrella.ts edge-dry-run
+      - name: Check the refusal without credentials
+        if: ${{ !cancelled() }}
+        env:
+          UMBRELLA_OUTCOME: ${{ steps.none.outcome }}
+          CHROME_OUTCOME: ${{ steps.none.outputs.chrome-outcome }}
+          CHROME_RESULT: ${{ steps.none.outputs.chrome-result }}
+          FIREFOX_OUTCOME: ${{ steps.none.outputs.firefox-outcome }}
+          FIREFOX_RESULT: ${{ steps.none.outputs.firefox-result }}
+          EDGE_OUTCOME: ${{ steps.none.outputs.edge-outcome }}
+          EDGE_RESULT: ${{ steps.none.outputs.edge-result }}
+          EDGE_ERROR_CODE: ${{ steps.none.outputs.edge-error-code }}
+        run: node test/umbrella.ts no-credentials
