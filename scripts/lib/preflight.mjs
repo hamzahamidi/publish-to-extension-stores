@@ -87,7 +87,7 @@ export function checkInputs(env = process.env) {
       problems.push('chrome-workload-identity-provider needs permissions: id-token: write on the job. A composite action cannot request it.');
     }
   } else if (token && trioGiven.length > 0) {
-    problems.push(`Pass either chrome-access-token or chrome-client-id, chrome-client-secret and chrome-refresh-token, not both (got chrome-access-token and ${and.format(trioGiven)}).`);
+    problems.push(`Pass either chrome-access-token or chrome-client-id, chrome-client-secret and chrome-refresh-token, not both (got ${and.format(['chrome-access-token', ...trioGiven])}).`);
   } else if (trioGiven.length > 0 && trioGiven.length < CHROME_TRIO.length) {
     const missing = CHROME_TRIO.filter((name) => !set(name));
     problems.push(`Missing ${and.format(missing)}. The refresh token route needs chrome-client-id, chrome-client-secret and chrome-refresh-token.`);
