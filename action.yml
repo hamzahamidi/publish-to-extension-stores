@@ -1,0 +1,260 @@
+name: Publish to Extension Stores
+description: Publish one release to the Chrome Web Store, Firefox Add-ons and Microsoft Edge Add-ons in one step.
+author: Hamza Hamidi
+
+branding:
+  icon: upload-cloud
+  color: purple
+
+inputs:
+  dry-run:
+    description: 'Passed as dry-run to each store action that runs. Each one checks its inputs and reports what a real run would do without uploading; the Chrome and Firefox actions also read the store with the credentials, the Edge action sends nothing.'
+    required: false
+    default: 'false'
+  chrome-workload-identity-provider:
+    description: 'Full resource name of the Workload Identity provider, projects/NUMBER/locations/global/workloadIdentityPools/POOL/providers/PROVIDER. With chrome-service-account, this action runs google-github-actions/auth and passes the 30 minute token to the Chrome action. The job must grant id-token write. Use this pair, chrome-access-token, or chrome-client-id with chrome-client-secret and chrome-refresh-token.'
+    required: false
+  chrome-service-account:
+    description: 'Email of the service account linked to the Chrome Web Store publisher. Pass it together with chrome-workload-identity-provider.'
+    required: false
+  chrome-access-token:
+    description: 'Chrome action input access-token. OAuth 2.0 access token with the https://www.googleapis.com/auth/chromewebstore scope, such as the access_token output of google-github-actions/auth. Use this or the refresh token inputs.'
+    required: false
+  chrome-client-id:
+    description: 'Chrome action input client-id. OAuth client ID, for the refresh token flow.'
+    required: false
+  chrome-client-secret:
+    description: 'Chrome action input client-secret. OAuth client secret, for the refresh token flow.'
+    required: false
+  chrome-refresh-token:
+    description: 'Chrome action input refresh-token. OAuth refresh token with the chromewebstore scope, for the refresh token flow.'
+    required: false
+  chrome-publisher-id:
+    description: 'Chrome action input publisher-id. Publisher ID, shown on the Account page of the Chrome Web Store Developer Dashboard. Required when Chrome runs.'
+    required: false
+  chrome-item-id:
+    description: 'Chrome action input item-id. The 32 letter ID of the extension. Required when Chrome runs.'
+    required: false
+  chrome-zip:
+    description: 'Chrome action input zip. Path to the extension ZIP, with manifest.json at its root. Use this or crx.'
+    required: false
+  chrome-crx:
+    description: 'Chrome action input crx. Path to a CRX3 package you signed, for an item opted in to Verified CRX Uploads. The action uploads it as is and never signs anything. Use this or zip.'
+    required: false
+  chrome-publish:
+    description: 'Chrome action input publish. Submit the uploaded version for review. Set to false to upload a draft only.'
+    required: false
+    default: 'true'
+  chrome-deploy-percentage:
+    description: 'Chrome action input deploy-percentage. Share of users, 0 to 100, who get the version. On submit it sets the initial rollout. For a zip or crx of the version already published, or with rollout-only, it raises the published rollout. Google allows this only for items with more than 10,000 seven-day active users, and only upward. Needs publish true.'
+    required: false
+  chrome-skip-review:
+    description: 'Chrome action input skip-review. Ask the store to publish without review. The store refuses the submission when the change needs review, and the run fails with the package left as a draft. Needs publish true.'
+    required: false
+    default: 'false'
+  chrome-block-on-warnings:
+    description: 'Chrome action input block-on-warnings. Make the store fail the submission when validation raises warnings, instead of passing them on. Needs publish true.'
+    required: false
+    default: 'false'
+  chrome-publish-type:
+    description: 'Chrome action input publish-type. default makes the version live once it passes review. staged holds the approved version for up to 30 days until you publish it in the dashboard or through the API (this action does not), then it reverts to a draft.'
+    required: false
+    default: 'default'
+  firefox-api-key:
+    description: 'Firefox action input api-key. AMO API key (the JWT issuer, user:12345:678) from the API Credentials page of the Developer Hub. Store it as its own secret. Required when Firefox runs.'
+    required: false
+  firefox-api-secret:
+    description: 'Firefox action input api-secret. AMO API secret from the same page. Store it as its own secret, never inside a JSON secret. Required when Firefox runs.'
+    required: false
+  firefox-addon-id:
+    description: 'Firefox action input addon-id. The add-on ID, as in browser_specific_settings.gecko.id. The add-on must already exist on AMO. Required when Firefox runs.'
+    required: false
+  firefox-zip:
+    description: 'Firefox action input zip. Path to the extension package (.zip or .xpi) with manifest.json at its root. Required when Firefox runs.'
+    required: false
+  firefox-channel:
+    description: 'Firefox action input channel. listed (public on addons.mozilla.org after review) or unlisted (signed for self-distribution). Required when Firefox runs.'
+    required: false
+  firefox-source:
+    description: 'Firefox action input source. Path to a ZIP of the source code, for bundled, minified or templated code. Never built or inferred by the action.'
+    required: false
+  firefox-release-notes:
+    description: 'Firefox action input release-notes. Release notes in English (en-US).'
+    required: false
+  firefox-approval-notes:
+    description: 'Firefox action input approval-notes. Notes for Mozilla reviewers, such as build instructions. Only Mozilla and the add-on''s authors see them.'
+    required: false
+  edge-api-key:
+    description: 'Edge action input api-key. API key from Partner Center, Microsoft Edge, Publish API. Keys expire after 72 days; the README shows how to rotate one. Pass it from a secret. Required when Edge runs.'
+    required: false
+  edge-client-id:
+    description: 'Edge action input client-id. Client ID from the same Publish API page, not an OAuth client ID. Pass it from a secret, so the runner redacts it where it lists step inputs. Required when Edge runs.'
+    required: false
+  edge-product-id:
+    description: 'Edge action input product-id. Product ID, the GUID on the Extension overview page in Partner Center. Not the extension ID in the store address. Required when Edge runs.'
+    required: false
+  edge-zip:
+    description: 'Edge action input zip. Path to the extension ZIP, with manifest.json at its root. Required when Edge runs.'
+    required: false
+  edge-publish:
+    description: 'Edge action input publish. Submit the draft for certification after the upload. Set to false to upload into the draft only and publish from Partner Center.'
+    required: false
+    default: 'true'
+  edge-certification-notes:
+    description: 'Edge action input certification-notes. Notes for the certification testers, sent with the submission as a form field named notes. See the README. Needs publish true.'
+    required: false
+
+outputs:
+  chrome-outcome:
+    description: 'success, failure or skipped. failure when the Chrome action failed or when google-github-actions/auth failed before it; skipped when Chrome did not run.'
+    value: ${{ steps.chrome-auth.outcome == 'failure' && 'failure' || steps.chrome.outcome }}
+  chrome-result:
+    description: 'Chrome action output result. submitted, uploaded (publish was false), skipped (this version was already in the store, or its rollout already reached deploy-percentage), raised (the rollout of the published version went up) or dry-run.'
+    value: ${{ steps.chrome.outputs.result }}
+  chrome-state:
+    description: 'Chrome action output state. Store state of this version when the action finished, such as PENDING_REVIEW, STAGED or PUBLISHED. Empty when result is uploaded, or dry-run for an upload, or when the store reports no state after submitting.'
+    value: ${{ steps.chrome.outputs.state }}
+  chrome-version:
+    description: 'Chrome action output version. Version read from manifest.json in the ZIP, or in the ZIP inside the CRX. With rollout-only, the newest published version.'
+    value: ${{ steps.chrome.outputs.version }}
+  firefox-outcome:
+    description: 'success, failure or skipped. skipped when Firefox did not run.'
+    value: ${{ steps.firefox.outcome }}
+  firefox-result:
+    description: 'Firefox action output result. submitted (this run created the version), skipped (the version already existed in this channel) or dry-run.'
+    value: ${{ steps.firefox.outputs.result }}
+  firefox-state:
+    description: 'Firefox action output state. AMO file status when the action finished, unreviewed, public or disabled. Empty for a dry run of a new version.'
+    value: ${{ steps.firefox.outputs.state }}
+  firefox-version:
+    description: 'Firefox action output version. Version read from manifest.json.'
+    value: ${{ steps.firefox.outputs.version }}
+  firefox-version-id:
+    description: 'Firefox action output version-id. AMO''s numeric version id, when the version exists.'
+    value: ${{ steps.firefox.outputs.version-id }}
+  firefox-edit-url:
+    description: 'Firefox action output edit-url. The version''s Developer Hub page.'
+    value: ${{ steps.firefox.outputs.edit-url }}
+  edge-outcome:
+    description: 'success, failure or skipped. skipped when Edge did not run.'
+    value: ${{ steps.edge.outcome }}
+  edge-result:
+    description: 'Edge action output result. submitted (in certification; Microsoft publishes it once approved), uploaded (publish was false), skipped (Microsoft reported no change since the last submission) or dry-run. Empty when the run fails.'
+    value: ${{ steps.edge.outputs.result }}
+  edge-version:
+    description: 'Edge action output version. Version read from manifest.json in the ZIP.'
+    value: ${{ steps.edge.outputs.version }}
+  edge-error-code:
+    description: 'Edge action output error-code. errorCode of a failed Microsoft operation, such as InProgressSubmission or NoModulesUpdated. Set also when the step fails. Empty otherwise.'
+    value: ${{ steps.edge.outputs.error-code }}
+
+runs:
+  using: composite
+  steps:
+    - id: preflight
+      name: Check which stores run
+      shell: bash
+      env:
+        DRY_RUN: ${{ inputs.dry-run }}
+        CHROME_WIF_PROVIDER_SET: ${{ inputs.chrome-workload-identity-provider != '' }}
+        CHROME_SERVICE_ACCOUNT_SET: ${{ inputs.chrome-service-account != '' }}
+        CHROME_ACCESS_TOKEN_SET: ${{ inputs.chrome-access-token != '' }}
+        CHROME_CLIENT_ID_SET: ${{ inputs.chrome-client-id != '' }}
+        CHROME_CLIENT_SECRET_SET: ${{ inputs.chrome-client-secret != '' }}
+        CHROME_REFRESH_TOKEN_SET: ${{ inputs.chrome-refresh-token != '' }}
+        CHROME_PUBLISHER_ID_SET: ${{ inputs.chrome-publisher-id != '' }}
+        CHROME_ITEM_ID_SET: ${{ inputs.chrome-item-id != '' }}
+        CHROME_ZIP_SET: ${{ inputs.chrome-zip != '' }}
+        CHROME_CRX_SET: ${{ inputs.chrome-crx != '' }}
+        FIREFOX_API_KEY_SET: ${{ inputs.firefox-api-key != '' }}
+        FIREFOX_API_SECRET_SET: ${{ inputs.firefox-api-secret != '' }}
+        FIREFOX_ADDON_ID_SET: ${{ inputs.firefox-addon-id != '' }}
+        FIREFOX_ZIP_SET: ${{ inputs.firefox-zip != '' }}
+        FIREFOX_CHANNEL_SET: ${{ inputs.firefox-channel != '' }}
+        EDGE_API_KEY_SET: ${{ inputs.edge-api-key != '' }}
+        EDGE_CLIENT_ID_SET: ${{ inputs.edge-client-id != '' }}
+        EDGE_PRODUCT_ID_SET: ${{ inputs.edge-product-id != '' }}
+        EDGE_ZIP_SET: ${{ inputs.edge-zip != '' }}
+      run: node "$GITHUB_ACTION_PATH/scripts/preflight.mjs"
+
+    - id: chrome-auth
+      name: Chrome Web Store token through Workload Identity Federation
+      if: ${{ !cancelled() && steps.preflight.outcome == 'success' && steps.preflight.outputs.chrome-wif == 'true' }}
+      uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+      with:
+        workload_identity_provider: ${{ inputs.chrome-workload-identity-provider }}
+        service_account: ${{ inputs.chrome-service-account }}
+        token_format: access_token
+        access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+        access_token_lifetime: 1800s
+        create_credentials_file: false
+        export_environment_variables: false
+
+    - id: chrome
+      name: Chrome Web Store
+      if: ${{ !cancelled() && steps.preflight.outcome == 'success' && steps.preflight.outputs.chrome == 'true' && steps.chrome-auth.outcome != 'failure' }}
+      uses: hamzahamidi/publish-to-chrome-web-store@c8919147f8de0d6f1129bec36345e4a9aa638af9 # v1.2.2
+      with:
+        access-token: ${{ inputs.chrome-access-token || steps.chrome-auth.outputs.access_token }}
+        client-id: ${{ inputs.chrome-client-id }}
+        client-secret: ${{ inputs.chrome-client-secret }}
+        refresh-token: ${{ inputs.chrome-refresh-token }}
+        publisher-id: ${{ inputs.chrome-publisher-id }}
+        item-id: ${{ inputs.chrome-item-id }}
+        zip: ${{ inputs.chrome-zip }}
+        crx: ${{ inputs.chrome-crx }}
+        publish: ${{ inputs.chrome-publish }}
+        dry-run: ${{ inputs.dry-run }}
+        deploy-percentage: ${{ inputs.chrome-deploy-percentage }}
+        skip-review: ${{ inputs.chrome-skip-review }}
+        block-on-warnings: ${{ inputs.chrome-block-on-warnings }}
+        publish-type: ${{ inputs.chrome-publish-type }}
+
+    - id: firefox
+      name: Firefox Add-ons
+      if: ${{ !cancelled() && steps.preflight.outcome == 'success' && steps.preflight.outputs.firefox == 'true' }}
+      uses: hamzahamidi/publish-to-firefox-add-ons@2ba89221adc23785de6b145bbefba813b044a03b # v1.0.0
+      with:
+        api-key: ${{ inputs.firefox-api-key }}
+        api-secret: ${{ inputs.firefox-api-secret }}
+        addon-id: ${{ inputs.firefox-addon-id }}
+        zip: ${{ inputs.firefox-zip }}
+        channel: ${{ inputs.firefox-channel }}
+        source: ${{ inputs.firefox-source }}
+        release-notes: ${{ inputs.firefox-release-notes }}
+        approval-notes: ${{ inputs.firefox-approval-notes }}
+        dry-run: ${{ inputs.dry-run }}
+
+    - id: edge
+      name: Microsoft Edge Add-ons
+      if: ${{ !cancelled() && steps.preflight.outcome == 'success' && steps.preflight.outputs.edge == 'true' }}
+      uses: hamzahamidi/publish-to-edge-add-ons@4efbcdd7ee5fef9612ff586e4ad4a9adda919e02 # v1.0.0
+      with:
+        api-key: ${{ inputs.edge-api-key }}
+        client-id: ${{ inputs.edge-client-id }}
+        product-id: ${{ inputs.edge-product-id }}
+        zip: ${{ inputs.edge-zip }}
+        publish: ${{ inputs.edge-publish }}
+        certification-notes: ${{ inputs.edge-certification-notes }}
+        dry-run: ${{ inputs.dry-run }}
+
+    - id: report
+      name: Report each store, fail if one failed
+      if: ${{ !cancelled() && steps.preflight.outcome == 'success' }}
+      shell: bash
+      env:
+        CHROME_AUTH_OUTCOME: ${{ steps.chrome-auth.outcome }}
+        CHROME_OUTCOME: ${{ steps.chrome-auth.outcome == 'failure' && 'failure' || steps.chrome.outcome }}
+        CHROME_RESULT: ${{ steps.chrome.outputs.result }}
+        CHROME_STATE: ${{ steps.chrome.outputs.state }}
+        CHROME_VERSION: ${{ steps.chrome.outputs.version }}
+        FIREFOX_OUTCOME: ${{ steps.firefox.outcome }}
+        FIREFOX_RESULT: ${{ steps.firefox.outputs.result }}
+        FIREFOX_STATE: ${{ steps.firefox.outputs.state }}
+        FIREFOX_VERSION: ${{ steps.firefox.outputs.version }}
+        FIREFOX_EDIT_URL: ${{ steps.firefox.outputs.edit-url }}
+        EDGE_OUTCOME: ${{ steps.edge.outcome }}
+        EDGE_RESULT: ${{ steps.edge.outputs.result }}
+        EDGE_VERSION: ${{ steps.edge.outputs.version }}
+        EDGE_ERROR_CODE: ${{ steps.edge.outputs.error-code }}
+      run: node "$GITHUB_ACTION_PATH/scripts/report.mjs"
