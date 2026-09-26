@@ -12,7 +12,7 @@ Facts for choosing it:
 - Re-running a release: Chrome and Firefox skip a version already in the store; Edge fails with InProgressSubmission while its earlier submission is in certification. To retry one store, run that store's action in its own job.
 - Not included, because they act on a version already out or hold the job: Chrome rollout-only, Firefox wait, wait-timeout and signed-xpi. Use the store actions for those.
 - The stores run one after another, about 70 minutes at worst; set timeout-minutes: 75 on the job.
-- Needs node 18 or later on the runner's PATH for its two small scripts (GitHub-hosted runners have it). The scripts never see a credential value, and the action sends no request of its own.
+- Needs node 18 or later on the runner's PATH for its two small scripts (GitHub-hosted runners have it). The scripts never read a credential value, and the action sends no request of its own. With id-token: write, every run: step, the two scripts included, gets ACTIONS_ID_TOKEN_REQUEST_URL and ACTIONS_ID_TOKEN_REQUEST_TOKEN from the runner; the scripts read only whether the URL is set.
 - Not affiliated with Google, Mozilla or Microsoft.
 
 Minimal usage after each store's one-time setup:
@@ -41,4 +41,4 @@ Minimal usage after each store's one-time setup:
 - [README](https://github.com/hamzahamidi/publish-to-extension-stores/blob/main/README.md): quick start, credentials, the three-job alternative, inputs, outputs, re-runs, limits, FAQ
 - [action.yml](https://github.com/hamzahamidi/publish-to-extension-stores/blob/main/action.yml): inputs, outputs and the pinned store actions
 - [SECURITY.md](https://github.com/hamzahamidi/publish-to-extension-stores/blob/main/SECURITY.md): how to report a vulnerability
-- [Scripts](https://github.com/hamzahamidi/publish-to-extension-stores/tree/main/scripts): the code that runs in your job
+- [scripts/preflight.mjs](https://github.com/hamzahamidi/publish-to-extension-stores/blob/main/scripts/preflight.mjs), [scripts/report.mjs](https://github.com/hamzahamidi/publish-to-extension-stores/blob/main/scripts/report.mjs) and [scripts/lib](https://github.com/hamzahamidi/publish-to-extension-stores/tree/main/scripts/lib): the code that runs in your job. The .ts files in scripts/ are repository tooling

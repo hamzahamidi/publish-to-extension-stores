@@ -129,9 +129,12 @@ Pass exactly one of three credential forms. The action refuses a mix before any 
 | Access token | `chrome-access-token` | Passes it to the Chrome action | A step before this one that gets the token |
 | Refresh token | `chrome-client-id`, `chrome-client-secret`, `chrome-refresh-token` | Passes the three to the Chrome action, which exchanges them and masks the token it gets | Three secrets in `extension-stores` |
 
-**Workload Identity Federation.** Follow the Chrome action's [Setting up Workload Identity Federation](https://github.com/hamzahamidi/publish-to-chrome-web-store#setting-up-workload-identity-federation). Its provider condition ends in `assertion.environment == 'chrome-web-store'`, and this job runs in `extension-stores`, so update the condition once:
+**Workload Identity Federation.** Follow the Chrome action's [Setting up Workload Identity Federation](https://github.com/hamzahamidi/publish-to-chrome-web-store#setting-up-workload-identity-federation). Its provider condition ends in `assertion.environment == 'chrome-web-store'`, and this job runs in `extension-stores`, so update the condition once. Set `OWNER_ID` and `REPO_ID` to the numeric IDs the first line prints, as in steps 1 and 4 of the Chrome setup:
 
 ```bash
+gh api repos/OWNER/REPO --jq '"owner \(.owner.id), repository \(.id)"'
+OWNER_ID=12345678
+REPO_ID=987654321
 gcloud iam workload-identity-pools providers update-oidc github \
   --location=global --workload-identity-pool=cws-publish \
   --attribute-condition="assertion.repository_owner_id == '$OWNER_ID' && assertion.repository_id == '$REPO_ID' && assertion.ref_type == 'tag' && assertion.environment == 'extension-stores'"
@@ -272,7 +275,8 @@ Outputs are set even when the step fails. Read them from a later step with `if: 
           VERSION: ${{ steps.stores.outputs.firefox-version }}
           STATE: ${{ steps.stores.outputs.firefox-state }}
           EDIT_URL: ${{ steps.stores.outputs.firefox-edit-url }}
-        run: echo "Firefox $VERSION is $STATE on AMO: $EDIT_URL" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "Firefox $VERSION is $STATE on AMO: $EDIT_URL" >> "$GITHUB_STEP_SUMMARY"
 ```
 
 ## Failures and re-runs
@@ -411,13 +415,17 @@ The `*-outcome` outputs are GitHub's step outcomes. `skipped` there means the st
 | 5. Microsoft Edge Add-ons | Edge runs | The Edge action, even when Chrome or Firefox failed |
 | 6. Report each store | Step 1 passed | Writes one log line per store and the summary table, and fails when a store failed |
 
-Every step after the first runs unless the workflow is cancelled, so a failed store does not skip the ones after it. Edge runs last because it takes longest.
+A failed store does not skip the ones after it: each later step runs when the condition in its row holds, unless step 1 failed or the workflow was cancelled. Edge runs last because it takes longest.
 
-What this action adds to the store actions is two small scripts, `scripts/preflight.mjs` and `scripts/report.mjs`, with no dependencies. The first receives only `true` or `false` for each input it checks, plus the `dry-run` value, and whether the job can request an OIDC token. The second receives only step outcomes and store outputs. Neither sees a credential value, and neither sends a request. No input reaches a `run:` script through an expression.
+What this action adds to the store actions is two small scripts, `scripts/preflight.mjs` and `scripts/report.mjs`, with no dependencies. The first reads only `true` or `false` for each input it checks, plus the `dry-run` value, and whether `ACTIONS_ID_TOKEN_REQUEST_URL` is set, which tells it that the job can request an OIDC token. The second reads only step outcomes and store outputs. Neither reads a credential value, and neither sends a request. With `id-token: write` the runner gives every `run:` step, these two included, `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN`; the scripts read only whether the URL is set. No input reaches a `run:` script through an expression.
 
 ## Three separate jobs
 
-The recommended setup keeps each store's credential in its own job and environment:
+The recommended setup keeps each store's credential in its own job and environment. Give each environment a required reviewer and a deployment rule that only allows your release tags:
+
+- `chrome-web-store` for Chrome, as the Chrome action's [Setting up Workload Identity Federation](https://github.com/hamzahamidi/publish-to-chrome-web-store#setting-up-workload-identity-federation) creates it. Its provider condition must name `chrome-web-store`: if you applied the `extension-stores` update under [Chrome](#chrome), run that `gcloud` command again with `chrome-web-store` in its place.
+- `firefox-add-ons` for Firefox, holding `AMO_API_KEY` and `AMO_API_SECRET`. See the Firefox action's [The credential](https://github.com/hamzahamidi/publish-to-firefox-add-ons#the-credential).
+- `edge-add-ons` for Edge, holding `EDGE_API_KEY` and `EDGE_CLIENT_ID`. See the Edge action's [Credentials](https://github.com/hamzahamidi/publish-to-edge-add-ons#credentials).
 
 ```yaml
 on:
@@ -521,7 +529,7 @@ jobs:
 | --- | --- | --- |
 | Jobs after the build | 1 | 3 |
 | Environments and approvals | 1 environment, 1 approval | 3 environments, 3 approvals (a reviewer can approve several at once) |
-| Who can read each credential | Every step of the job: the three store actions, auth, and this action's scripts (which receive only presence flags) | Only the steps of that store's job |
+| Who can read each credential | Every step of the job: the three store actions, auth, and this action's scripts (which read only presence flags) | Only the steps of that store's job |
 | Who can request an OIDC token Google accepts | Every step of the job | Only the Chrome job |
 | Where the AMO and Edge secrets live | The environment the Workload Identity condition names | Their own environments |
 | One store fails | The others still run; the step fails at the end | The other jobs are unaffected; each job has its own status |
@@ -537,10 +545,10 @@ jobs:
 ## Trust and security
 
 - **Pinned by commit.** Every action this one runs is pinned to the full commit SHA of a release, listed under [Versions](#versions). A tag moved on another repository does not change what runs.
-- **No credential in this action's code.** The two scripts see presence flags, outcomes and store outputs, never a credential value. The credentials go only to the `with:` of the store actions and of `google-github-actions/auth`.
+- **No credential in this action's code.** The two scripts read presence flags, outcomes and store outputs, never a credential value. The credentials go only to the `with:` of the store actions and of `google-github-actions/auth`.
 - **Masking.** Each store action masks its credentials before its first log line, and `google-github-actions/auth` masks the token it mints. The token reaches only the Chrome action's input, never an output. Secrets forwarded through this action's inputs stay redacted in the log, because the runner redacts every job secret wherever it appears.
 - **Requests.** Each store action lists every request it makes: [Chrome](https://github.com/hamzahamidi/publish-to-chrome-web-store#every-request-the-action-makes), [Firefox](https://github.com/hamzahamidi/publish-to-firefox-add-ons#every-request-the-action-makes), [Edge](https://github.com/hamzahamidi/publish-to-edge-add-ons#every-request-the-action-makes). This action makes none.
-- **The OIDC token.** `id-token: write` covers the whole job, so the Firefox and Edge actions could request a GitHub OIDC token too. Neither does. The Workload Identity condition decides what Google accepts; see [Three separate jobs](#three-separate-jobs) to keep that token out of reach of the other stores' code.
+- **The OIDC token.** `id-token: write` covers the whole job, so every step of it could request a GitHub OIDC token: the Firefox and Edge actions, and every `run:` step, this action's two scripts included, which get `ACTIONS_ID_TOKEN_REQUEST_URL` and `ACTIONS_ID_TOKEN_REQUEST_TOKEN` from the runner. Neither store action requests one, and the scripts read only whether the URL is set. The Workload Identity condition decides what Google accepts; see [Three separate jobs](#three-separate-jobs) to keep that token out of reach of the other stores' code.
 - **Store output values are data.** A version comes from a manifest inside the package. The report step joins line breaks and defuses workflow commands before printing a value, and escapes table syntax and HTML in the step summary.
 
 ## Versions
@@ -583,7 +591,7 @@ No. A store runs only when its credential inputs are set. With one store, its ow
 
 ### Does it store a secret?
 
-No. It passes your secrets to the store actions for one run and writes nothing anywhere. With Workload Identity Federation, Chrome needs no stored secret at all.
+No. It passes your secrets to the store actions for one run and stores none. It writes only step outputs and the step summary, and neither holds a credential. With Workload Identity Federation, Chrome needs no stored secret at all.
 
 ### Is a re-run safe?
 

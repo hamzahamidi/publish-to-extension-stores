@@ -10,4 +10,4 @@ First release. Runs Chrome 1.2.2, Firefox 1.0.0, Edge 1.0.0 and google-github-ac
 - Runs a store when one of its credential inputs is set. Refuses incomplete or conflicting inputs before any store runs, including a store identifier without any credential and Workload Identity in a job without `id-token: write`, and reports every problem at once.
 - Runs every configured store even when an earlier one failed, then fails the step with one error naming the failed stores.
 - Returns each store's outputs and a `success`, `failure` or `skipped` outcome per store, also when the step fails, and writes a table of the stores to the step summary.
-- Two scripts with no dependencies decide which stores run and report what they did. They receive presence flags, step outcomes and store outputs, never a credential value, and need `node` 18 or later on the runner's `PATH`.
+- Two scripts with no dependencies decide which stores run and report what they did. They read presence flags, step outcomes and store outputs, never a credential value, and need `node` 18 or later on the runner's `PATH`.
