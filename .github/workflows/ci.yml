@@ -293,6 +293,7 @@ jobs:
             chrome-item-id: abcdefghijklmnopabcdefghijklmnop
             chrome-zip: stores/chrome/self-test.zip
           - case: Workload Identity in a job without id-token write
+            without-id-token: true
             chrome-workload-identity-provider: projects/123456789/locations/global/workloadIdentityPools/cws-publish/providers/github
             chrome-service-account: cws-publisher@example-project.iam.gserviceaccount.com
             chrome-publisher-id: pub-1
@@ -356,6 +357,10 @@ jobs:
       - id: stores
         continue-on-error: true
         uses: ./
+        env:
+          # Preflight reads only whether this is set, so the placeholder keeps P7 from firing next to P4 and P5.
+          # Preflight fails in every row, so no step requests a token from it.
+          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ !matrix.without-id-token && 'http://127.0.0.1:1/' || '' }}
         with:
           dry-run: ${{ matrix.dry-run }}
           chrome-workload-identity-provider: ${{ matrix.chrome-workload-identity-provider }}
