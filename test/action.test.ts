@@ -156,7 +156,7 @@ describe('README', () => {
       rows.map((row) => row.join(' | ')),
       pins.map((pin) => `[${pin.repository}](https://github.com/${pin.repository}) | ${pin.version} | \`${pin.ref}\``),
     );
-    const changelog = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8');
+    const changelog = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8').replace(/\r\n/g, '\n');
     const newest = /^## .*\n\n(.*)$/m.exec(changelog)?.[1] ?? '';
     for (const pin of pins) assert.ok(newest.includes(pin.version.slice(1)), `the newest CHANGELOG entry does not name ${pin.repository} ${pin.version}`);
   });

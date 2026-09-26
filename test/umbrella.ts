@@ -71,9 +71,10 @@ const SCENARIOS: Record<string, Scenario> = {
     mocks: true,
     silent: ['edge'],
     async check() {
+      const { FETCH } = await import('../stores/chrome/test/helpers.ts');
       const chrome = chromeCalls() ?? [];
       assert.ok(chrome.length > 0, 'the Chrome dry run read nothing');
-      for (const key of chrome) assert.match(key, /^GET \/v2\/publishers\/[^/]+\/items\/[^/]+:fetchStatus$/, 'the Chrome dry run sent more than status reads');
+      for (const key of chrome) assert.equal(key, FETCH, 'the Chrome dry run sent more than status reads');
       const firefox = await firefoxCalls();
       assert.ok(firefox.length > 0, 'the Firefox dry run read nothing');
       for (const request of firefox) assert.equal(request.method, 'GET', `the Firefox dry run sent ${request.call}`);
