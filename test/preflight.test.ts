@@ -274,12 +274,12 @@ describe('runPreflight', () => {
   it('runs as a script with only the step environment', () => {
     const output = join(dir, 'script');
     writeFileSync(output, '');
-    const ok = spawnSync(process.execPath, [SCRIPT], { env: { ...env(FIREFOX), GITHUB_OUTPUT: output }, encoding: 'utf8' });
+    const ok = spawnSync(process.execPath, [SCRIPT], { env: { PATH: process.env.PATH ?? '', ...env(FIREFOX), GITHUB_OUTPUT: output }, encoding: 'utf8' });
     assert.equal(ok.status, 0, ok.stdout + ok.stderr);
     assert.match(ok.stdout, /^Runs: Firefox\./);
     assert.match(readFileSync(output, 'utf8'), /^firefox=true$/m);
 
-    const refused = spawnSync(process.execPath, [SCRIPT], { env: { ...env(['chrome-item-id']), GITHUB_OUTPUT: output }, encoding: 'utf8' });
+    const refused = spawnSync(process.execPath, [SCRIPT], { env: { PATH: process.env.PATH ?? '', ...env(['chrome-item-id']), GITHUB_OUTPUT: output }, encoding: 'utf8' });
     assert.equal(refused.status, 1);
     assert.equal(refused.stdout.split('\n').filter((line) => line.startsWith('::error::')).length, 2);
   });

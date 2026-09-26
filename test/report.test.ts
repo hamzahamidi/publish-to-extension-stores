@@ -140,13 +140,13 @@ describe('runReport', () => {
   it('runs as a script and fails when a store failed', () => {
     const summary = join(dir, 'script.md');
     writeFileSync(summary, '');
-    const result = spawnSync(process.execPath, [SCRIPT], { env: { ...submitted, FIREFOX_OUTCOME: 'failure', GITHUB_STEP_SUMMARY: summary }, encoding: 'utf8' });
+    const result = spawnSync(process.execPath, [SCRIPT], { env: { PATH: process.env.PATH ?? '', ...submitted, FIREFOX_OUTCOME: 'failure', GITHUB_STEP_SUMMARY: summary }, encoding: 'utf8' });
     assert.equal(result.status, 1, result.stderr);
     assert.match(result.stdout, /^Chrome Web Store: success\./);
     assert.match(result.stdout, /^::error::Failed: Firefox Add-ons\./m);
     assert.equal(summaryRows(readFileSync(summary, 'utf8')).length, 3);
 
-    const ok = spawnSync(process.execPath, [SCRIPT], { env: submitted, encoding: 'utf8' });
+    const ok = spawnSync(process.execPath, [SCRIPT], { env: { PATH: process.env.PATH ?? '', ...submitted }, encoding: 'utf8' });
     assert.equal(ok.status, 0, ok.stderr);
   });
 });
