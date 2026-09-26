@@ -5,6 +5,7 @@ import { describe, it } from 'node:test';
 import { FLAGS } from '../scripts/lib/preflight.mjs';
 import { ENV_NAMES } from '../scripts/lib/report.mjs';
 import { readPins } from '../scripts/pins.ts';
+import { EXCLUDED } from './exclusions.ts';
 import { list, map, parseYaml, text, type YamlMap } from './yaml.ts';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -103,4 +104,88 @@ describe('action.yml', () => {
   it('never exposes the Google token as an output', () => {
     for (const [name, output] of Object.entries(outputs)) assert.ok(!text(map(output, name).value, name).includes('access_token'), name);
   });
+});
+
+const readme = readFileSync(join(ROOT, 'README.md'), 'utf8').replace(/\r\n/g, '\n');
+const inputs = map(action.inputs, 'inputs');
+
+function section(heading: string): string {
+  const lines = readme.split('\n');
+  const start = lines.indexOf(`## ${heading}`);
+  assert.ok(start >= 0, `README has no "## ${heading}" section`);
+  const end = lines.findIndex((line, index) => index > start && line.startsWith('## '));
+  return lines.slice(start + 1, end < 0 ? undefined : end).join('\n');
+}
+
+function tableRows(markdown: string): string[][] {
+  const rows: string[][] = [];
+  const lines = markdown.split('\n');
+  lines.forEach((line, index) => {
+    if (!line.startsWith('| ') || line.startsWith('| ---') || lines[index + 1]?.startsWith('| ---')) return;
+    rows.push(line.slice(2, -2).split(' | '));
+  });
+  return rows;
+}
+
+const codeNames = (markdown: string) => tableRows(markdown).map((row) => /^`([\w-]+)`$/.exec(row[0] ?? '')?.[1]).filter((name): name is string => Boolean(name));
+
+describe('README', () => {
+  it('lists every input once in the inputs tables', () => {
+    const names = codeNames(section('Inputs'));
+    assert.deepEqual([...names].sort(), Object.keys(inputs).sort());
+  });
+
+  it('lists every output once in the outputs table', () => {
+    const names = codeNames(section('Outputs'));
+    assert.deepEqual([...names].sort(), Object.keys(outputs).sort());
+  });
+
+  it('lists every store input and output left out, once', () => {
+    const rows = tableRows(section('What it leaves to the store actions')).map((row) => row[0] ?? '');
+    const expected = Object.entries(EXCLUDED).flatMap(([store, { inputs: excludedInputs, outputs: excludedOutputs }]) => {
+      const title = store[0]!.toUpperCase() + store.slice(1);
+      return [...excludedInputs.map((name) => `${title} input \`${name}\``), ...excludedOutputs.map((name) => `${title} output \`${name}\``)];
+    });
+    assert.deepEqual([...rows].sort(), expected.sort());
+  });
+
+  it('names the pinned version and commit of every inner action', () => {
+    const pins = readPins(source);
+    const rows = tableRows(section('Versions')).filter((row) => row[0]?.startsWith('['));
+    assert.deepEqual(
+      rows.map((row) => row.join(' | ')),
+      pins.map((pin) => `[${pin.repository}](https://github.com/${pin.repository}) | ${pin.version} | \`${pin.ref}\``),
+    );
+    const changelog = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8');
+    const newest = /^## .*\n\n(.*)$/m.exec(changelog)?.[1] ?? '';
+    for (const pin of pins) assert.ok(newest.includes(pin.version.slice(1)), `the newest CHANGELOG entry does not name ${pin.repository} ${pin.version}`);
+  });
+
+  it('uses only declared inputs and outputs in its examples', () => {
+    const blocks = [...readme.matchAll(/```yaml\n([\s\S]*?)```/g)].map((match) => match[1]!);
+    for (const block of blocks.filter((each) => !/uses: hamzahamidi\/publish-to-(chrome|firefox|edge)/.test(each) || each.includes('publish-to-extension-stores'))) {
+      for (const [, name] of block.matchAll(/^\s+((?:chrome|firefox|edge)-[\w-]+|dry-run):/gm)) assert.ok(inputs[name!], `README example uses undeclared input ${name}`);
+    }
+    for (const [, name] of readme.matchAll(/steps\.stores\.outputs\.([\w-]+)/g)) assert.ok(outputs[name!], `README uses undeclared output ${name}`);
+  });
+});
+
+describe('writing rules', () => {
+  const files = ['README.md', 'CHANGELOG.md', 'SECURITY.md', 'llms.txt', 'action.yml'];
+  const banned = /\b(ensur\w*|leverag\w*|comprehensive\w*|robust\w*|seamless\w*|optimi[sz]\w*|overall|ultimately|additionally|furthermore|moreover|untested|best effort|not verified)\b/i;
+
+  for (const file of files) {
+    it(`${file} uses no dash punctuation and none of the excluded words`, () => {
+      let fenced = false;
+      readFileSync(join(ROOT, file), 'utf8')
+        .split(/\r?\n/)
+        .forEach((line, index) => {
+          if (line.startsWith('```')) fenced = !fenced;
+          const where = `${file}:${index + 1}`;
+          assert.ok(!/[\u2013\u2014]/.test(line), `${where} has an en or em dash`);
+          assert.ok(!banned.test(line), `${where} uses an excluded word: ${banned.exec(line)?.[0]}`);
+          if (!fenced && file !== 'action.yml') assert.ok(!/\S\s-\s/.test(line.replace(/^\s*- /, '')), `${where} uses a hyphen as a dash`);
+        });
+    });
+  }
 });

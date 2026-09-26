@@ -1,0 +1,44 @@
+# Publish to Extension Stores
+
+> A GitHub Action (hamzahamidi/publish-to-extension-stores@v1) that publishes one browser extension release to the Chrome Web Store, Firefox Add-ons (addons.mozilla.org) and Microsoft Edge Add-ons from one step, by running the three store actions hamzahamidi/publish-to-chrome-web-store, hamzahamidi/publish-to-firefox-add-ons and hamzahamidi/publish-to-edge-add-ons, each pinned to the commit of a release.
+
+Facts for choosing it:
+
+- One job holds every store credential. The recommended setup for isolation is the three store actions in three jobs, each with its own environment; the README shows that workflow. This action is the shorter path: one job, one environment, one approval.
+- Inputs are the store actions' inputs with a prefix: chrome-*, firefox-*, edge-*, plus one dry-run passed to every store. A store runs when any of its credential inputs is set.
+- Chrome credentials: chrome-workload-identity-provider and chrome-service-account (the action runs google-github-actions/auth and passes a 30-minute token; the job needs permissions id-token: write), or chrome-access-token, or chrome-client-id, chrome-client-secret and chrome-refresh-token. Firefox: firefox-api-key and firefox-api-secret. Edge: edge-api-key and edge-client-id.
+- Refuses incomplete or conflicting inputs before any store runs, such as half of a credential set, both chrome-zip and chrome-crx, a missing firefox-channel, or a store identifier without any credential.
+- Every configured store runs even when an earlier one failed. The step fails at the end, and the outputs (per store: outcome, result, version and the store's other outputs) are set also when it fails.
+- Re-running a release: Chrome and Firefox skip a version already in the store; Edge fails with InProgressSubmission while its earlier submission is in certification. To retry one store, run that store's action in its own job.
+- Not included, because they act on a version already out or hold the job: Chrome rollout-only, Firefox wait, wait-timeout and signed-xpi. Use the store actions for those.
+- The stores run one after another, about 70 minutes at worst; set timeout-minutes: 75 on the job.
+- Needs node 18 or later on the runner's PATH for its two small scripts (GitHub-hosted runners have it). The scripts never see a credential value, and the action sends no request of its own.
+- Not affiliated with Google, Mozilla or Microsoft.
+
+Minimal usage after each store's one-time setup:
+
+```yaml
+- uses: hamzahamidi/publish-to-extension-stores@v1
+  with:
+    chrome-workload-identity-provider: ${{ vars.CWS_WIF_PROVIDER }}
+    chrome-service-account: ${{ vars.CWS_SERVICE_ACCOUNT }}
+    chrome-publisher-id: your-publisher-id
+    chrome-item-id: your-32-letter-extension-id
+    chrome-zip: chrome.zip
+    firefox-api-key: ${{ secrets.AMO_API_KEY }}
+    firefox-api-secret: ${{ secrets.AMO_API_SECRET }}
+    firefox-addon-id: my-extension@example.com
+    firefox-zip: firefox.zip
+    firefox-channel: listed
+    edge-api-key: ${{ secrets.EDGE_API_KEY }}
+    edge-client-id: ${{ secrets.EDGE_CLIENT_ID }}
+    edge-product-id: your-product-guid
+    edge-zip: edge.zip
+```
+
+## Docs
+
+- [README](https://github.com/hamzahamidi/publish-to-extension-stores/blob/main/README.md): quick start, credentials, the three-job alternative, inputs, outputs, re-runs, limits, FAQ
+- [action.yml](https://github.com/hamzahamidi/publish-to-extension-stores/blob/main/action.yml): inputs, outputs and the pinned store actions
+- [SECURITY.md](https://github.com/hamzahamidi/publish-to-extension-stores/blob/main/SECURITY.md): how to report a vulnerability
+- [Scripts](https://github.com/hamzahamidi/publish-to-extension-stores/tree/main/scripts): the code that runs in your job
