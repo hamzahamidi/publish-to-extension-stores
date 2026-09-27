@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+Runs Chrome 1.2.2, Firefox 1.1.0, Edge 1.0.0 and google-github-actions/auth 3.0.0.
+
+- Adds `firefox-compatibility`, passed to the Firefox action's `compatibility` input: AMO's applications and versions for the version, as JSON. Without it AMO reads them from `manifest.json`, as before.
+
 ## 1.0.0
 
 First release. Runs Chrome 1.2.2, Firefox 1.0.0, Edge 1.0.0 and google-github-actions/auth 3.0.0.

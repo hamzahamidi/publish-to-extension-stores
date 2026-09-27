@@ -138,7 +138,7 @@ describe('parity with the pinned store actions', () => {
     assert.deepEqual(Object.keys(umbrellaOutputs).sort(), mappedOutputs.sort());
   });
 
-  it('counts 30 inputs and 14 outputs, as the README states', () => {
-    assert.deepEqual([Object.keys(umbrellaInputs).length, mappedInputs.length, Object.keys(umbrellaOutputs).length], [30, 27, 14]);
+  it('counts 31 inputs and 14 outputs, as the README states', () => {
+    assert.deepEqual([Object.keys(umbrellaInputs).length, mappedInputs.length, Object.keys(umbrellaOutputs).length], [31, 28, 14]);
   });
 });
