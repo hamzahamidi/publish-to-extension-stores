@@ -84,6 +84,9 @@ inputs:
   firefox-approval-notes:
     description: 'Firefox action input approval-notes. Notes for Mozilla reviewers, such as build instructions. Only Mozilla and the add-on''s authors see them.'
     required: false
+  firefox-compatibility:
+    description: 'Firefox action input compatibility. JSON: the applications and versions this version supports, such as ["firefox","android"] or {"firefox":{"min":"128.0"}}. Set on every run; omit to keep what AMO reads from manifest.json.'
+    required: false
   edge-api-key:
     description: 'Edge action input api-key. API key from Partner Center, Microsoft Edge, Publish API. Keys expire after 72 days; the README shows how to rotate one. Pass it from a secret. Required when Edge runs.'
     required: false
@@ -213,7 +216,7 @@ runs:
     - id: firefox
       name: Firefox Add-ons
       if: ${{ !cancelled() && steps.preflight.outcome == 'success' && steps.preflight.outputs.firefox == 'true' }}
-      uses: hamzahamidi/publish-to-firefox-add-ons@2ba89221adc23785de6b145bbefba813b044a03b # v1.0.0
+      uses: hamzahamidi/publish-to-firefox-add-ons@d68c8e16ec0a95a8370cc3c77d85455627aa2441 # v1.1.0
       with:
         api-key: ${{ inputs.firefox-api-key }}
         api-secret: ${{ inputs.firefox-api-secret }}
@@ -223,6 +226,7 @@ runs:
         source: ${{ inputs.firefox-source }}
         release-notes: ${{ inputs.firefox-release-notes }}
         approval-notes: ${{ inputs.firefox-approval-notes }}
+        compatibility: ${{ inputs.firefox-compatibility }}
         dry-run: ${{ inputs.dry-run }}
 
     - id: edge

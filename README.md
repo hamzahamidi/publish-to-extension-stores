@@ -359,6 +359,7 @@ Each store input keeps its store action's name behind a prefix: `chrome-`, `fire
 | `firefox-source` | `source` | | ZIP of the source code |
 | `firefox-release-notes` | `release-notes` | | In English (en-US) |
 | `firefox-approval-notes` | `approval-notes` | | For Mozilla reviewers |
+| `firefox-compatibility` | `compatibility` | | JSON, AMO's applications and versions for the version. Omit to use `manifest.json` |
 
 ### Edge
 
@@ -559,7 +560,7 @@ This release runs:
 | --- | --- | --- |
 | [google-github-actions/auth](https://github.com/google-github-actions/auth) | v3.0.0 | `7c6bc770dae815cd3e89ee6cdf493a5fab2cc093` |
 | [hamzahamidi/publish-to-chrome-web-store](https://github.com/hamzahamidi/publish-to-chrome-web-store) | v1.2.2 | `c8919147f8de0d6f1129bec36345e4a9aa638af9` |
-| [hamzahamidi/publish-to-firefox-add-ons](https://github.com/hamzahamidi/publish-to-firefox-add-ons) | v1.0.0 | `2ba89221adc23785de6b145bbefba813b044a03b` |
+| [hamzahamidi/publish-to-firefox-add-ons](https://github.com/hamzahamidi/publish-to-firefox-add-ons) | v1.1.0 | `d68c8e16ec0a95a8370cc3c77d85455627aa2441` |
 | [hamzahamidi/publish-to-edge-add-ons](https://github.com/hamzahamidi/publish-to-edge-add-ons) | v1.0.0 | `4efbcdd7ee5fef9612ff586e4ad4a9adda919e02` |
 
 Each store action release needs a release of this action, which Dependabot proposes. A store release with a security fix gets a release of this action the same day, other store releases within a week. The version moves at least as far as the largest inner move:
