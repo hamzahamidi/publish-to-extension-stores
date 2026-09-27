@@ -129,7 +129,7 @@ Pass exactly one of three credential forms. The action refuses a mix before any 
 | Access token | `chrome-access-token` | Passes it to the Chrome action | A step before this one that gets the token |
 | Refresh token | `chrome-client-id`, `chrome-client-secret`, `chrome-refresh-token` | Passes the three to the Chrome action, which exchanges them and masks the token it gets | Three secrets in `extension-stores` |
 
-**Workload Identity Federation.** Follow the Chrome action's [Setting up Workload Identity Federation](https://github.com/hamzahamidi/publish-to-chrome-web-store#setting-up-workload-identity-federation). Its provider condition ends in `assertion.environment == 'chrome-web-store'`, and this job runs in `extension-stores`, so update the condition once. Set `OWNER_ID` and `REPO_ID` to the numeric IDs the first line prints, as in steps 1 and 4 of the Chrome setup:
+**Workload Identity Federation.** Follow the Chrome action's [Setting up Workload Identity Federation](https://github.com/hamzahamidi/publish-to-chrome-web-store#setting-up-workload-identity-federation). Its provider condition restricts owner ID, repository ID and release tags, and ends in `assertion.environment == 'chrome-web-store'`. This job runs in `extension-stores`, so update the condition once. Set `OWNER_ID` and `REPO_ID` to the numeric IDs the first line prints, as in steps 1 and 4 of the Chrome setup:
 
 ```bash
 gh api repos/OWNER/REPO --jq '"owner \(.owner.id), repository \(.id)"'
@@ -137,7 +137,7 @@ OWNER_ID=12345678
 REPO_ID=987654321
 gcloud iam workload-identity-pools providers update-oidc github \
   --location=global --workload-identity-pool=cws-publish \
-  --attribute-condition="assertion.repository_owner_id == '$OWNER_ID' && assertion.repository_id == '$REPO_ID' && assertion.ref_type == 'tag' && assertion.environment == 'extension-stores'"
+  --attribute-condition="assertion.repository_owner_id == '$OWNER_ID' && assertion.repository_id == '$REPO_ID' && assertion.ref_type == 'tag' && assertion.ref.startsWith('refs/tags/v') && assertion.environment == 'extension-stores'"
 ```
 
 To avoid any Google Cloud change, run the publish job in your existing `chrome-web-store` environment instead and add the four AMO and Edge secrets there. It works at once, but the environment's name no longer says what it holds.
